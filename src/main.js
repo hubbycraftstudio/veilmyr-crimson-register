@@ -70,11 +70,21 @@ function normalizeRow(row) {
 const isDisplay = location.pathname.replace(/\/$/, '').endsWith('/display');
 if (isDisplay) renderDisplay(); else renderDM();
 
+
 function renderDisplay() {
   app.innerHTML = `<main class="display-view">
+    <button id="fullscreen-btn" class="fullscreen-btn" title="Toggle fullscreen">⛶</button>
     <div id="display-grid" class="display-grid"></div>
     <div id="display-status" class="connection" aria-live="polite">Connecting…</div>
   </main>`;
+
+  document.querySelector('#fullscreen-btn').addEventListener('click', async () => {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+    } else {
+      await document.documentElement.requestFullscreen();
+    }
+  });
 
   const grid = document.querySelector('#display-grid');
   const status = document.querySelector('#display-status');
@@ -103,6 +113,7 @@ function renderDisplay() {
     status.className = 'connection offline';
   });
 }
+
 
 function renderDM() {
   let rows = loadDraft();
