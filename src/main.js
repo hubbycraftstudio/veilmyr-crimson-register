@@ -114,7 +114,7 @@ function renderDM() {
     <header>
       <div>
         <h1>Crimson Register</h1>
-        <p>Private DM dashboard · <a href="./display" target="_blank" rel="noopener">Open player display ↗</a></p>
+        <p>Private DM dashboard · <a href="/display/" target="_blank" rel="noopener">Open player display ↗</a></p>
       </div>
       <div class="header-status">
         <span id="sync-label">Connecting…</span>
