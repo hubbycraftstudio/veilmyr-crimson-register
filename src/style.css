@@ -509,3 +509,9 @@ td:nth-child(7) {
 .blood-seal .seal-meter-svg-fill {
   transition: stroke-dasharray 10s ease;
 }
+
+/* Hide Magical Items column, preserving underlying data */
+.dashboard th:nth-child(4),
+.dashboard td:nth-child(4) {
+  display: none;
+}

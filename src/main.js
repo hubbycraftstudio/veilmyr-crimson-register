@@ -215,6 +215,7 @@ function renderDM() {
     </header>
     <div class="controls">
       <button id="add">+ Add person</button>
+      <button id="roll-initiative">Roll Initiative</button>
       <button id="import">Import CSV</button>
       <button id="export">Export CSV</button>
       <button id="reset" class="subtle">Clear draft</button>
@@ -341,6 +342,20 @@ function renderDM() {
     save();
     draw();
     tbody.querySelector('tr:last-child input[data-field="name"]')?.focus();
+  };
+
+  document.querySelector('#roll-initiative').onclick = () => {
+    if (!rows.length) return;
+
+    if (!confirm('Roll new initiative for everyone? This will overwrite existing rolls.')) return;
+
+    rows.forEach(row => {
+      row.initiative = String(Math.floor(Math.random() * 20) + 1);
+    });
+
+    save();
+    draw();
+    show('Initiative rolled for all characters.');
   };
 
   document.querySelector('#reset').onclick = () => {
