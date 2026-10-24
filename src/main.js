@@ -2,6 +2,7 @@
 import './style.css';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from './firebase.js';
+import bloodSealSvg from './assets/crimson-register-web-nodes.svg?raw';
 
 const KEY = 'veilmyr-crimson-register-draft-v1';
 const REF = doc(db, 'register', 'published');
@@ -86,7 +87,19 @@ if (isDisplay) renderDisplay(); else renderDM();
 function renderDisplay() {
   app.innerHTML = `<main class="display-view">
     <button id="fullscreen-btn" class="fullscreen-btn" title="Toggle fullscreen">⛶</button>
-    <div id="display-grid" class="display-grid"></div>
+    <div id="display-grid" class="display-grid"></div>    
+    <div id="blood-seal" class="blood-seal">
+      ${bloodSealSvg}
+      <div id="seal-meter" class="seal-meter">
+        <div class="seal-meter-left">
+          <div class="seal-meter-fill"></div>
+        </div>
+        <div class="seal-meter-node"></div>
+        <div class="seal-meter-right">
+          <div class="seal-meter-fill"></div>
+        </div>
+      </div>
+    </div>
     <div id="display-status" class="connection" aria-live="polite">Connecting…</div>
   </main>`;
 
@@ -139,6 +152,37 @@ function renderDisplay() {
   onSnapshot(REF, (snapshot) => {
     const data = snapshot.data();
     const glyphs = Array.isArray(data?.glyphs) ? data.glyphs.slice(0, MAX) : [];
+    const soulPoints = glyphs.reduce((total, person) => {
+      if (person.soulPresent !== false) return total;
+      return total + 5 + (person.innateMagic ? 3 : 0);
+    }, 0);
+
+    document.querySelectorAll('#blood-seal .blood-seal-level')
+      .forEach((level, index) => {
+        const threshold = (index + 1) * 5;
+        const start = Math.max(0, threshold - 7);
+        const brightness = Math.max(0, Math.min(1,
+          (soulPoints - start) / (threshold - start)
+        ));
+
+        level.style.opacity = brightness;
+      });
+
+    document.querySelectorAll('#blood-seal .blood-seal-node')
+      .forEach((node, index) => {
+        const threshold = (index + 1) * 5;
+        node.classList.toggle('is-lit', soulPoints >= threshold);
+      });
+
+    console.log(`Blood Seal: ${soulPoints}/40 points`);
+
+    // Symmetrical progress bar (0–40 points)
+    const progress = Math.min(100, Math.max(0, (soulPoints / 40) * 100));
+
+    document.querySelectorAll('#seal-meter .seal-meter-fill')
+      .forEach(fill => {
+        fill.style.width = `${progress}%`;
+      });
 
     let position = 0;
     grid.innerHTML = [8, 9, 8].map((size) =>
@@ -317,11 +361,12 @@ function renderDM() {
   };
 
   document.querySelector('#export').onclick = () => {
-    const header = ['Initiative','Name','Innate Magic','Magical Items','Soul Present'];
+    const header = ['Initiative','Name','Innate Magic','Magical Items','Alive','Soul Present'];
     const csv = [header, ...sorted(rows).map(r => [
       r.initiative, r.name,
       r.innateMagic ? 'Yes' : 'No',
       r.items,
+      r.alive !== false ? 'Yes' : 'No',
       r.soulPresent ? 'Yes' : 'No'
     ])].map(cells =>
       cells.map(v => `"${String(v).replaceAll('"','""')}"`).join(',')
@@ -346,18 +391,31 @@ function renderDM() {
 
     try {
       const parsed = parseCSV(await f.text().then(s => s.replace(/^\uFEFF/, '')));
-      const expected = ['Initiative','Name','Innate Magic','Magical Items','Soul Present'];
+      const oldHeader = ['Initiative','Name','Innate Magic','Magical Items','Soul Present'];
+      const newHeader = ['Initiative','Name','Innate Magic','Magical Items','Alive','Soul Present'];
 
-      if (parsed[0]?.join('|').toLowerCase() !== expected.join('|').toLowerCase()) {
-        throw new Error(`CSV header must be: ${expected.join(', ')}`);
+      const actualHeader = parsed[0]?.map(x => x.trim().toLowerCase()).join('|');
+      const oldFormat = actualHeader === oldHeader.join('|').toLowerCase();
+      const newFormat = actualHeader === newHeader.join('|').toLowerCase();
+
+      if (!oldFormat && !newFormat) {
+        throw new Error('CSV must contain the original five columns or the new six columns.');
       }
 
       const imported = parsed.slice(1)
         .filter(cells => cells.some(v => v.trim()))
         .map((cells) => {
-          if (cells.length !== 5) throw new Error('Each CSV row must have five columns.');
-          if (!['yes','no'].includes(cells[2].trim().toLowerCase()) ||
-              !['yes','no'].includes(cells[4].trim().toLowerCase())) {
+          const expectedCount = newFormat ? 6 : 5;
+
+          if (cells.length !== expectedCount) {
+            throw new Error(`Each CSV row must have ${expectedCount} columns.`);
+          }
+
+          const isYesNo = value => ['yes', 'no'].includes(value.trim().toLowerCase());
+
+          if (!isYesNo(cells[2]) ||
+              (newFormat && !isYesNo(cells[4])) ||
+              !isYesNo(cells[newFormat ? 5 : 4])) {
             throw new Error('Boolean columns must use Yes or No.');
           }
 
@@ -366,7 +424,10 @@ function renderDM() {
             name: cells[1],
             innateMagic: cells[2].trim().toLowerCase() === 'yes',
             items: cells[3],
-            soulPresent: cells[4].trim().toLowerCase() === 'yes'
+            alive: newFormat
+              ? cells[4].trim().toLowerCase() === 'yes'
+              : true,
+            soulPresent: cells[newFormat ? 5 : 4].trim().toLowerCase() === 'yes'
           });
         });
 
