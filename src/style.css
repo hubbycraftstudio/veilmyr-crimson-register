@@ -276,3 +276,132 @@ td button.delete { font-size: 20px; padding: 5px 10px; }
 .fullscreen-btn:hover {
   opacity: 1;
 }
+
+
+/* Compact DM dashboard */
+.dashboard {
+  padding: 10px 16px;
+}
+
+.dashboard header {
+  margin-bottom: 8px;
+}
+
+.dashboard h1 {
+  font-size: 21px;
+}
+
+.controls {
+  margin-bottom: 5px;
+  gap: 6px;
+}
+
+.controls button {
+  padding: 5px 9px;
+}
+
+.feedback {
+  min-height: 20px;
+}
+
+th, td {
+  padding: 3px 6px;
+}
+
+input:not([type=checkbox]), textarea {
+  padding: 3px 6px;
+  font-size: 13px;
+  height: 27px;
+}
+
+textarea {
+  min-height: 27px;
+  height: 27px;
+  overflow: hidden;
+  resize: vertical;
+}
+
+textarea:focus {
+  overflow-y: hidden;
+}
+
+input[type=checkbox] {
+  width: 16px;
+  height: 16px;
+  margin-top: 5px;
+}
+
+td:nth-child(4) {
+  position: relative;
+}
+
+td:nth-child(4) textarea {
+  padding-right: 65px;
+}
+
+td small {
+  position: absolute;
+  right: 12px;
+  top: 9px;
+  margin: 0;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+td button.delete {
+  padding: 1px 7px;
+  font-size: 17px;
+}
+
+.dashboard .footnote {
+  margin-top: 6px;
+}
+
+/* Align Alive and Soul Present columns */
+th:nth-child(5),
+th:nth-child(6),
+td:nth-child(5),
+td:nth-child(6) {
+  text-align: center;
+  width: 95px;
+}
+
+td:nth-child(7) {
+  width: 50px;
+}
+
+/* Silver soul orb */
+.soul-orb {
+  animation: soulFloat 5s ease-in-out infinite;
+}
+
+.orb-halo {
+  fill: none;
+  stroke: #dbe7f4;
+  stroke-width: 2;
+  opacity: 0.55;
+  filter: drop-shadow(0 0 4px #dbe7f4);
+  stroke-linecap: round;
+  stroke-dasharray: 2 3 3 2 4 3 2 4;
+}
+
+.orb-core {
+  fill: #edf4ff;
+  stroke: #ffffff;
+  stroke-width: 1;
+  filter: drop-shadow(0 0 4px #d5e8ff);
+}
+
+@keyframes soulFloat {
+  0%, 100% { transform: translateY(0); opacity: 0.9; }
+  50% { transform: translateY(-2px); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .soul-orb { animation: none; }
+}
+
+/* Hide connection status unless there's a problem */
+.display-view .connection:not(.offline) {
+  visibility: hidden;
+}

@@ -9,7 +9,7 @@ const app = document.querySelector('#app');
 const MAX = 25;
 
 const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-const newRow = () => ({ id: newId(), initiative: '', name: '', innateMagic: false, items: '', soulPresent: true });
+const newRow = () => ({ id: newId(), initiative: '', name: '', innateMagic: false, items: '', alive: true, soulPresent: true });
 const escaped = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const itemNames = (value) => String(value ?? '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
 const sorted = (rows) => [...rows].sort((a, b) => (Number(b.initiative) || 0) - (Number(a.initiative) || 0));
@@ -28,22 +28,33 @@ function numeralDots(n) {
 
 function glyphMarkup(row, index) {
   const dots = numeralDots(Number(row.magicalItems) || 0);
-  const mode = !row.soulPresent ? 'departed' : row.innateMagic ? 'magical' : 'ordinary';
+  const mode = row.alive !== false
+    ? (row.innateMagic ? 'magical' : 'ordinary')
+    : 'departed';
 
-  // Dots and figure share SVG coordinates.
-  // First dot is beside the foot, ninth beside the head.
+  const soulMarkup = row.soulPresent
+    ? `<g class="soul-orb">
+        <circle class="orb-halo" cx="50" cy="-6" r="9" />
+        <circle class="orb-core" cx="50" cy="-6" r="5.5" />
+      </g>`
+    : '';
+
   const dotMarkup = dots.map((colour, i) =>
-    `<circle class="item-dot ${colour}" cx="90" cy="${135 - i * 14}" r="4.5" />`
+    `<circle class="item-dot ${colour}" cx="97" cy="${135 - i * 14}" r="4.5" />`
   ).join('');
 
-  return `<div class="glyph-cell" aria-label="Soul ${index + 1}"><div class="glyph ${mode}">
-    <svg viewBox="0 0 125 150" aria-hidden="true">
-      <g class="figure">
-        <circle cx="50" cy="25" r="14"/>
-        <path d="M50 39V99 M21 63H79 M50 99L25 139 M50 99L75 139"/>
-      </g>
-      <g class="item-dots">${dotMarkup}</g>
-    </svg></div></div>`;
+  return `<div class="glyph-cell" aria-label="Soul ${index + 1}">
+    <div class="glyph ${mode}">
+      <svg viewBox="0 0 125 150" aria-hidden="true">
+        ${soulMarkup}
+        <g class="figure">
+          <circle cx="50" cy="25" r="14"/>
+          <path d="M50 39V99 M21 63H79 M50 99L25 139 M50 99L75 139"/>
+        </g>
+        <g class="item-dots">${dotMarkup}</g>
+      </svg>
+    </div>
+  </div>`;
 }
 
 function loadDraft() {
@@ -64,6 +75,7 @@ function normalizeRow(row) {
     innateMagic: row.innateMagic === true,
     items: String(row.items ?? ''),
     soulPresent: row.soulPresent !== false,
+    alive: row.alive !== false,
   };
 }
 
@@ -88,6 +100,40 @@ function renderDisplay() {
 
   const grid = document.querySelector('#display-grid');
   const status = document.querySelector('#display-status');
+
+  // Keep the player display awake, including on battery power.
+  let wakeLock = null;
+
+  async function keepScreenAwake() {
+    if (!('wakeLock' in navigator)) {
+      console.warn('Screen wake lock not supported.');
+      return;
+    }
+
+    if (document.visibilityState !== 'visible' || wakeLock) return;
+
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      console.log('Screen wake lock active.');
+
+      wakeLock.addEventListener('release', () => {
+        wakeLock = null;
+        console.log('Screen wake lock released.');
+      });
+    } catch (error) {
+      console.warn('Could not keep screen awake:', error);
+    }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      keepScreenAwake();
+    }
+  });
+
+  keepScreenAwake();
+
+
   grid.innerHTML = `<div class="empty">Waiting for a published register…</div>`;
 
   onSnapshot(REF, (snapshot) => {
@@ -145,8 +191,12 @@ function renderDM() {
     <div class="table-wrap">
       <table>
         <thead><tr>
-          <th>Initiative</th><th>Name</th><th>Innate magic</th>
-          <th>Magical items (one per line)</th><th>Soul present</th><th></th>
+          <th>Initiative</th>
+          <th>Name</th>
+          <th>Innate magic</th>
+          <th>Magical items (one per line)</th>
+          <th>Alive</th>
+          <th>Soul present</th><th></th>
         </tr></thead>
         <tbody id="roster"></tbody>
       </table>
@@ -183,6 +233,7 @@ function renderDM() {
       <td><input data-field="name" value="${escaped(row.name)}" placeholder="Name" aria-label="Name" /></td>
       <td><input data-field="innateMagic" type="checkbox" ${row.innateMagic ? 'checked' : ''} aria-label="Innate magic" /></td>
       <td><textarea data-field="items" rows="2" placeholder="One item per line" aria-label="Magical items">${escaped(row.items)}</textarea><small>${itemNames(row.items).length} items</small></td>
+      <td><input data-field="alive" type="checkbox" ${row.alive !== false ? 'checked' : ''} aria-label="Alive" /></td>
       <td><input data-field="soulPresent" type="checkbox" ${row.soulPresent ? 'checked' : ''} aria-label="Soul present" /></td>
       <td><button class="delete subtle" data-delete="${escaped(row.id)}" aria-label="Remove ${escaped(row.name || 'person')}">×</button></td>
     </tr>`).join('');
@@ -208,6 +259,31 @@ function renderDM() {
   }
 
   tbody.addEventListener('input', editRow);
+
+  function resizeItemField(textarea) {
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.max(27, textarea.scrollHeight)}px`;
+  }
+
+  tbody.addEventListener('focusin', (event) => {
+    if (event.target.matches('textarea[data-field="items"]')) {
+      resizeItemField(event.target);
+    }
+  });
+
+  tbody.addEventListener('input', (event) => {
+    if (event.target.matches('textarea[data-field="items"]')) {
+      resizeItemField(event.target);
+    }
+  });
+
+  tbody.addEventListener('focusout', (event) => {
+    if (event.target.matches('textarea[data-field="items"]')) {
+      event.target.style.height = '27px';
+    }
+  });
+
+
   tbody.addEventListener('change', (event) => {
     editRow(event);
     if (event.target.dataset.field === 'initiative') draw();
@@ -322,6 +398,7 @@ function renderDM() {
       const glyphs = sorted(rows).map(r => ({
         innateMagic: r.innateMagic,
         magicalItems: itemNames(r.items).length,
+        alive: r.alive !== false,
         soulPresent: r.soulPresent
       }));
 
