@@ -2,7 +2,7 @@
 import './style.css';
 import { doc, onSnapshot, setDoc } from 'firebase/firestore';
 import { db } from './firebase.js';
-import bloodSealSvg from './assets/crimson-register-web-nodes.svg?raw';
+import bloodSealSvg from './assets/crimson-register-with-meter.svg?raw';
 
 const KEY = 'veilmyr-crimson-register-draft-v1';
 const REF = doc(db, 'register', 'published');
@@ -87,18 +87,9 @@ if (isDisplay) renderDisplay(); else renderDM();
 function renderDisplay() {
   app.innerHTML = `<main class="display-view">
     <button id="fullscreen-btn" class="fullscreen-btn" title="Toggle fullscreen">⛶</button>
-    <div id="display-grid" class="display-grid"></div>    
+    <div id="display-grid" class="display-grid"></div>
     <div id="blood-seal" class="blood-seal">
       ${bloodSealSvg}
-      <div id="seal-meter" class="seal-meter">
-        <div class="seal-meter-left">
-          <div class="seal-meter-fill"></div>
-        </div>
-        <div class="seal-meter-node"></div>
-        <div class="seal-meter-right">
-          <div class="seal-meter-fill"></div>
-        </div>
-      </div>
     </div>
     <div id="display-status" class="connection" aria-live="polite">Connecting…</div>
   </main>`;
@@ -177,11 +168,11 @@ function renderDisplay() {
     console.log(`Blood Seal: ${soulPoints}/40 points`);
 
     // Symmetrical progress bar (0–40 points)
-    const progress = Math.min(100, Math.max(0, (soulPoints / 40) * 100));
+    const progress = Math.min(1, Math.max(0, soulPoints / 40));
 
-    document.querySelectorAll('#seal-meter .seal-meter-fill')
+    document.querySelectorAll('#seal-meter-svg .seal-meter-svg-fill')
       .forEach(fill => {
-        fill.style.width = `${progress}%`;
+        fill.style.strokeDasharray = `${225 * progress} 225`;
       });
 
     let position = 0;

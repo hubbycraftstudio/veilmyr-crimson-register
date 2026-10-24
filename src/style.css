@@ -401,9 +401,8 @@ td:nth-child(7) {
   .soul-orb { animation: none; }
 }
 
-/* Hide connection status unless there's a problem */
 .display-view .connection:not(.offline) {
-  visibility: hidden;
+  display: none;
 }
 
 
@@ -438,7 +437,7 @@ td:nth-child(7) {
 /* Progressive Blood Seal illumination */
 .blood-seal .blood-seal-level {
   opacity: 0;
-  transition: opacity 0.8s ease;
+  transition: opacity 5s ease;
   filter: drop-shadow(0 0 4px #e052ff);
 }
 
@@ -450,7 +449,7 @@ td:nth-child(7) {
 .blood-seal .blood-seal-node {
   opacity: 0 !important;
   fill: #ffd84a !important;
-  transition: opacity 0.4s ease;
+  transition: opacity 3s ease;
 }
 
 .blood-seal .blood-seal-node.is-lit {
@@ -491,7 +490,7 @@ td:nth-child(7) {
   width: 0%;
   height: 100%;
   background: #ffd84a;
-  transition: width 0.8s ease;
+  transition: width 10s ease;
 }
 
 .seal-meter-left .seal-meter-fill {
@@ -504,4 +503,9 @@ td:nth-child(7) {
   border-radius: 50%;
   background: #888;
   flex-shrink: 0;
+}
+
+/* Smooth filling of the SVG progress bar */
+.blood-seal .seal-meter-svg-fill {
+  transition: stroke-dasharray 10s ease;
 }
