@@ -8,6 +8,7 @@ const KEY = 'veilmyr-crimson-register-draft-v1';
 const REF = doc(db, 'register', 'published');
 const app = document.querySelector('#app');
 const MAX = 25;
+const SEAL_THRESHOLDS = [8, 15, 23, 30, 38, 45, 53, 60];
 
 const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
 const newRow = () => ({ id: newId(), initiative: '', name: '', innateMagic: false, items: '', alive: true, soulPresent: true });
@@ -150,8 +151,8 @@ function renderDisplay() {
 
     document.querySelectorAll('#blood-seal .blood-seal-level')
       .forEach((level, index) => {
-        const threshold = (index + 1) * 5;
-        const start = Math.max(0, threshold - 7);
+        const threshold = SEAL_THRESHOLDS[index];
+        const start = Math.max(0, threshold - 10);
         const brightness = Math.max(0, Math.min(1,
           (soulPoints - start) / (threshold - start)
         ));
@@ -161,14 +162,14 @@ function renderDisplay() {
 
     document.querySelectorAll('#blood-seal .blood-seal-node')
       .forEach((node, index) => {
-        const threshold = (index + 1) * 5;
+        const threshold = SEAL_THRESHOLDS[index];
         node.classList.toggle('is-lit', soulPoints >= threshold);
       });
 
     console.log(`Blood Seal: ${soulPoints}/40 points`);
 
     // Symmetrical progress bar (0–40 points)
-    const progress = Math.min(1, Math.max(0, soulPoints / 40));
+    const progress = Math.min(1, Math.max(0, soulPoints / 60));
 
     document.querySelectorAll('#seal-meter-svg .seal-meter-svg-fill')
       .forEach(fill => {
