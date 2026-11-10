@@ -7,7 +7,7 @@
 }
 * { box-sizing: border-box; }
 body { margin: 0; }
-button, input, textarea { font: inherit; }
+button, input, textarea, select { font: inherit; }
 
 button {
   background: #2d2228;
@@ -98,7 +98,7 @@ td:nth-child(4) { width: 35%; }
 td:nth-child(6) { width: 50px; }
 tr:last-child td { border-bottom: none; }
 
-input:not([type=checkbox]), textarea {
+input:not([type=checkbox]), textarea, select {
   width: 100%;
   background: #1d171a;
   color: #f8eff0;
@@ -184,7 +184,7 @@ td button.delete { font-size: 20px; padding: 5px 10px; }
   stroke: #c77dff;
   filter: drop-shadow(0 0 3px #b65cff)
           drop-shadow(0 0 10px #7c24d6);
-  animation: pulse 5s ease-in-out infinite;
+  animation: pulse 4s ease-in-out infinite;
 }
 
 /* Departed soul */
@@ -232,15 +232,19 @@ td button.delete { font-size: 20px; padding: 5px 10px; }
   }
 }
 
-/* Stronger magical thrum */
 @keyframes pulse {
   0%, 100% {
-    filter: drop-shadow(0 0 3px #a64cff)
-            drop-shadow(0 0 7px #6320ac);
+    stroke: #a766d4;
+    stroke-width: 3.5;
+    filter: drop-shadow(0 0 2px #8030b3)
+            drop-shadow(0 0 5px #6320ac);
   }
+
   50% {
-    filter: drop-shadow(0 0 5px #d293ff)
-            drop-shadow(0 0 15px #9538e8);
+    stroke: #f3c4ff;
+    stroke-width: 5.5;
+    filter: drop-shadow(0 0 8px #e6a0ff)
+            drop-shadow(0 0 20px #a137ff);
   }
 }
 
@@ -308,7 +312,7 @@ th, td {
   padding: 3px 6px;
 }
 
-input:not([type=checkbox]), textarea {
+input:not([type=checkbox]), textarea, select {
   padding: 3px 6px;
   font-size: 13px;
   height: 27px;
@@ -357,18 +361,16 @@ td button.delete {
   margin-top: 6px;
 }
 
-/* Align Alive and Soul Present columns */
-th:nth-child(5),
-th:nth-child(6),
-td:nth-child(5),
-td:nth-child(6) {
+/* Body/Soul status and Spark controls */
+th:nth-child(5), th:nth-child(6), th:nth-child(7),
+td:nth-child(5), td:nth-child(6), td:nth-child(7) {
   text-align: center;
-  width: 95px;
+  width: 125px;
 }
-
-td:nth-child(7) {
-  width: 50px;
-}
+td:nth-child(8) { width: 50px; }
+.dashboard select { min-width: 100px; cursor: pointer; }
+.dashboard input[type=checkbox]:disabled { opacity: .3; cursor: not-allowed; }
+.portal-score { color: #e7a7ad; font-size: 13px; white-space: nowrap; }
 
 /* Silver soul orb */
 .soul-orb {
@@ -513,5 +515,16 @@ td:nth-child(7) {
 /* Hide Magical Items column, preserving underlying data */
 .dashboard th:nth-child(4),
 .dashboard td:nth-child(4) {
+  display: none;
+}
+
+/* Hide wake-lock diagnostics from player display */
+.wake-status {
+  display: none;
+}
+
+/* Absent bodies leave their souls visible */
+.glyph.absent .figure,
+.glyph.absent .item-dots {
   display: none;
 }

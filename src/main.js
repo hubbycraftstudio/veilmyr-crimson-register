@@ -11,7 +11,7 @@ const MAX = 25;
 const SEAL_THRESHOLDS = [8, 15, 23, 30, 38, 45, 53, 60];
 
 const newId = () => globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
-const newRow = () => ({ id: newId(), initiative: '', name: '', innateMagic: false, items: '', alive: true, soulPresent: true });
+const newRow = () => ({ id: newId(), initiative: '', name: '', innateMagic: false, items: '', bodyStatus: 'alive', soulStatus: 'present', sparkConsumed: false });
 const escaped = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
 const itemNames = (value) => String(value ?? '').split(/\r?\n/).map(x => x.trim()).filter(Boolean);
 const sorted = (rows) => [...rows].sort((a, b) => (Number(b.initiative) || 0) - (Number(a.initiative) || 0));
@@ -29,12 +29,15 @@ function numeralDots(n) {
 }
 
 function glyphMarkup(row, index) {
-  const dots = numeralDots(Number(row.magicalItems) || 0);
-  const mode = row.alive !== false
-    ? (row.innateMagic ? 'magical' : 'ordinary')
-    : 'departed';
 
-  const soulMarkup = row.soulPresent
+  const dots = numeralDots(Number(row.magicalItems) || 0);
+  const mode = row.bodyStatus === 'absent'
+    ? 'absent'
+    : row.bodyStatus === 'dead'
+      ? 'departed'
+      : (row.innateMagic && !row.sparkConsumed ? 'magical' : 'ordinary');
+
+  const soulMarkup = row.soulStatus === 'present'
     ? `<g class="soul-orb">
         <circle class="orb-halo" cx="50" cy="-6" r="9" />
         <circle class="orb-core" cx="50" cy="-6" r="5.5" />
@@ -69,16 +72,45 @@ function loadDraft() {
   return [];
 }
 
+const BODY_STATUSES = ['alive', 'dead', 'absent'];
+const SOUL_STATUSES = ['present', 'consumed', 'absent'];
+
+function statusFields(row) {
+  const innateMagic = row.innateMagic === true;
+  // Old versions represented both soul and spark consumption as soulPresent=false.
+  // Preserve those previously awarded 5+3 points when migrating old rosters.
+  const legacyConsumption = row.soulStatus === undefined && row.soulPresent === false;
+  return {
+    innateMagic,
+    bodyStatus: BODY_STATUSES.includes(row.bodyStatus)
+      ? row.bodyStatus : (row.alive === false ? 'dead' : 'alive'),
+    soulStatus: SOUL_STATUSES.includes(row.soulStatus)
+      ? row.soulStatus : (legacyConsumption ? 'consumed' : 'present'),
+    sparkConsumed: innateMagic && (typeof row.sparkConsumed === 'boolean'
+      ? row.sparkConsumed : legacyConsumption),
+  };
+}
+
 function normalizeRow(row) {
   return {
     id: typeof row.id === 'string' ? row.id : newId(),
     initiative: String(row.initiative ?? ''),
     name: String(row.name ?? ''),
-    innateMagic: row.innateMagic === true,
     items: String(row.items ?? ''),
-    soulPresent: row.soulPresent !== false,
-    alive: row.alive !== false,
+    ...statusFields(row),
   };
+}
+
+function portalPoints(rows) {
+  return rows.reduce((total, row) => total
+    + (row.soulStatus === 'consumed' ? 5 : 0)
+    + (row.innateMagic && row.sparkConsumed ? 3 : 0), 0);
+}
+
+function statusSelect(field, value, options, name) {
+  return `<select data-field="${field}" aria-label="${field === 'bodyStatus' ? 'Body' : 'Soul'} status for ${escaped(name)}">
+    ${options.map(option => `<option value="${option}" ${value === option ? 'selected' : ''}>${option[0].toUpperCase()}${option.slice(1)}</option>`).join('')}
+  </select>`;
 }
 
 const isDisplay = location.pathname.replace(/\/$/, '').endsWith('/display');
@@ -88,6 +120,7 @@ if (isDisplay) renderDisplay(); else renderDM();
 function renderDisplay() {
   app.innerHTML = `<main class="display-view">
     <button id="fullscreen-btn" class="fullscreen-btn" title="Toggle fullscreen">⛶</button>
+    <div id="wake-status" class="wake-status" role="status" aria-live="polite">Checking screen wake lock…</div>
     <div id="display-grid" class="display-grid"></div>
     <div id="blood-seal" class="blood-seal">
       ${bloodSealSvg}
@@ -106,36 +139,63 @@ function renderDisplay() {
   const grid = document.querySelector('#display-grid');
   const status = document.querySelector('#display-status');
 
-  // Keep the player display awake, including on battery power.
+  // Android may release screen wake locks when focus, fullscreen or power state changes.
+  // Show the actual browser-reported state, and retry while the display is visible.
+  const wakeStatus = document.querySelector('#wake-status');
   let wakeLock = null;
+  let requestingWakeLock = false;
+  let wakeRetryTimer = null;
+
+  function showWakeStatus(message, problem = false) {
+    wakeStatus.textContent = message;
+    wakeStatus.classList.toggle('problem', problem);
+  }
+
+  function retryWakeLock(delay = 2000) {
+    clearTimeout(wakeRetryTimer);
+    if (document.visibilityState === 'visible') {
+      wakeRetryTimer = setTimeout(keepScreenAwake, delay);
+    }
+  }
 
   async function keepScreenAwake() {
     if (!('wakeLock' in navigator)) {
-      console.warn('Screen wake lock not supported.');
+      showWakeStatus('Screen wake lock unsupported', true);
       return;
     }
+    if (document.visibilityState !== 'visible') return;
+    if (requestingWakeLock || (wakeLock && !wakeLock.released)) return;
 
-    if (document.visibilityState !== 'visible' || wakeLock) return;
-
+    requestingWakeLock = true;
+    clearTimeout(wakeRetryTimer);
     try {
-      wakeLock = await navigator.wakeLock.request('screen');
+      const lock = await navigator.wakeLock.request('screen');
+      wakeLock = lock;
+      showWakeStatus('Screen wake lock active');
       console.log('Screen wake lock active.');
 
-      wakeLock.addEventListener('release', () => {
+      lock.addEventListener('release', () => {
+        if (wakeLock !== lock) return;
         wakeLock = null;
-        console.log('Screen wake lock released.');
+        showWakeStatus('Screen wake lock released — retrying', true);
+        console.warn('Screen wake lock released.');
+        retryWakeLock();
       });
     } catch (error) {
+      showWakeStatus('Screen wake lock unavailable — retrying', true);
       console.warn('Could not keep screen awake:', error);
+      retryWakeLock(15000);
+    } finally {
+      requestingWakeLock = false;
     }
   }
 
   document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') {
-      keepScreenAwake();
-    }
+    if (document.visibilityState === 'visible') keepScreenAwake();
   });
-
+  document.addEventListener('fullscreenchange', keepScreenAwake);
+  window.addEventListener('focus', keepScreenAwake);
+  window.addEventListener('pageshow', keepScreenAwake);
   keepScreenAwake();
 
 
@@ -143,11 +203,10 @@ function renderDisplay() {
 
   onSnapshot(REF, (snapshot) => {
     const data = snapshot.data();
-    const glyphs = Array.isArray(data?.glyphs) ? data.glyphs.slice(0, MAX) : [];
-    const soulPoints = glyphs.reduce((total, person) => {
-      if (person.soulPresent !== false) return total;
-      return total + 5 + (person.innateMagic ? 3 : 0);
-    }, 0);
+    // Accept published records from either version of the app.
+    const glyphs = (Array.isArray(data?.glyphs) ? data.glyphs.slice(0, MAX) : [])
+      .map(row => ({ ...row, ...statusFields(row) }));
+    const soulPoints = portalPoints(glyphs);
 
     document.querySelectorAll('#blood-seal .blood-seal-level')
       .forEach((level, index) => {
@@ -166,9 +225,9 @@ function renderDisplay() {
         node.classList.toggle('is-lit', soulPoints >= threshold);
       });
 
-    console.log(`Blood Seal: ${soulPoints}/40 points`);
+    console.log(`Blood Seal: ${soulPoints}/60 points`);
 
-    // Symmetrical progress bar (0–40 points)
+    // Symmetrical progress bar (0–60 points)
     const progress = Math.min(1, Math.max(0, soulPoints / 60));
 
     document.querySelectorAll('#seal-meter-svg .seal-meter-svg-fill')
@@ -221,6 +280,7 @@ function renderDM() {
       <button id="export">Export CSV</button>
       <button id="reset" class="subtle">Clear draft</button>
       <span id="draft-state" class="draft-state">Local draft</span>
+      <span id="portal-score" class="portal-score">Portal: 0/60</span>
       <button id="publish" class="primary">Publish to display</button>
     </div>
     <input id="file" type="file" accept=".csv,text/csv" hidden />
@@ -232,8 +292,9 @@ function renderDM() {
           <th>Name</th>
           <th>Innate magic</th>
           <th>Magical items (one per line)</th>
-          <th>Alive</th>
-          <th>Soul present</th><th></th>
+          <th>Body status</th>
+          <th>Soul status</th>
+          <th>Spark consumed</th><th></th>
         </tr></thead>
         <tbody id="roster"></tbody>
       </table>
@@ -248,6 +309,8 @@ function renderDM() {
   const syncLabel = document.querySelector('#sync-label');
   const publishedLabel = document.querySelector('#published-label');
   const file = document.querySelector('#file');
+  const portalScore = document.querySelector('#portal-score');
+  const updateScorePreview = () => { portalScore.textContent = `Portal: ${portalPoints(rows)}/60`; };
 
   function show(text, error = false) {
     feedback.textContent = text;
@@ -270,13 +333,15 @@ function renderDM() {
       <td><input data-field="name" value="${escaped(row.name)}" placeholder="Name" aria-label="Name" /></td>
       <td><input data-field="innateMagic" type="checkbox" ${row.innateMagic ? 'checked' : ''} aria-label="Innate magic" /></td>
       <td><textarea data-field="items" rows="2" placeholder="One item per line" aria-label="Magical items">${escaped(row.items)}</textarea><small>${itemNames(row.items).length} items</small></td>
-      <td><input data-field="alive" type="checkbox" ${row.alive !== false ? 'checked' : ''} aria-label="Alive" /></td>
-      <td><input data-field="soulPresent" type="checkbox" ${row.soulPresent ? 'checked' : ''} aria-label="Soul present" /></td>
+      <td>${statusSelect('bodyStatus', row.bodyStatus, BODY_STATUSES, row.name || 'person')}</td>
+      <td>${statusSelect('soulStatus', row.soulStatus, SOUL_STATUSES, row.name || 'person')}</td>
+      <td><input data-field="sparkConsumed" type="checkbox" ${row.sparkConsumed ? 'checked' : ''} ${!row.innateMagic ? 'disabled' : ''} aria-label="Spark consumed for ${escaped(row.name || 'person')}" /></td>
       <td><button class="delete subtle" data-delete="${escaped(row.id)}" aria-label="Remove ${escaped(row.name || 'person')}">×</button></td>
     </tr>`).join('');
 
     document.querySelector('#add').disabled = rows.length >= MAX;
     state.textContent = dirty ? 'Unpublished changes · saved locally' : 'Local draft ready';
+    updateScorePreview();
   }
 
   function editRow(event) {
@@ -289,13 +354,19 @@ function renderDM() {
       ? event.target.checked
       : event.target.value;
 
+    if (field === 'innateMagic' && !row.innateMagic) row.sparkConsumed = false;
+
     save();
+    updateScorePreview();
     if (field === 'items') {
       event.target.nextElementSibling.textContent = `${itemNames(row.items).length} items`;
     }
+    if (field === 'innateMagic') draw(); // refresh Spark checkbox enabled state
   }
 
-  tbody.addEventListener('input', editRow);
+  tbody.addEventListener('input', (event) => {
+    if (!event.target.matches('select, input[type="checkbox"]')) editRow(event);
+  });
 
   function resizeItemField(textarea) {
     textarea.style.height = 'auto';
@@ -322,7 +393,7 @@ function renderDM() {
 
 
   tbody.addEventListener('change', (event) => {
-    editRow(event);
+    if (event.target.matches('select, input[type="checkbox"]')) editRow(event);
     if (event.target.dataset.field === 'initiative') draw();
   });
 
@@ -368,13 +439,14 @@ function renderDM() {
   };
 
   document.querySelector('#export').onclick = () => {
-    const header = ['Initiative','Name','Innate Magic','Magical Items','Alive','Soul Present'];
+    const header = ['Initiative','Name','Innate Magic','Magical Items','Body Status','Soul Status','Spark Consumed'];
     const csv = [header, ...sorted(rows).map(r => [
       r.initiative, r.name,
       r.innateMagic ? 'Yes' : 'No',
       r.items,
-      r.alive !== false ? 'Yes' : 'No',
-      r.soulPresent ? 'Yes' : 'No'
+      r.bodyStatus,
+      r.soulStatus,
+      r.sparkConsumed ? 'Yes' : 'No'
     ])].map(cells =>
       cells.map(v => `"${String(v).replaceAll('"','""')}"`).join(',')
     ).join('\r\n');
@@ -398,43 +470,51 @@ function renderDM() {
 
     try {
       const parsed = parseCSV(await f.text().then(s => s.replace(/^\uFEFF/, '')));
-      const oldHeader = ['Initiative','Name','Innate Magic','Magical Items','Soul Present'];
-      const newHeader = ['Initiative','Name','Innate Magic','Magical Items','Alive','Soul Present'];
-
+      const headers = [
+        ['Initiative','Name','Innate Magic','Magical Items','Soul Present'],
+        ['Initiative','Name','Innate Magic','Magical Items','Alive','Soul Present'],
+        ['Initiative','Name','Innate Magic','Magical Items','Body Status','Soul Status','Spark Consumed']
+      ];
       const actualHeader = parsed[0]?.map(x => x.trim().toLowerCase()).join('|');
-      const oldFormat = actualHeader === oldHeader.join('|').toLowerCase();
-      const newFormat = actualHeader === newHeader.join('|').toLowerCase();
-
-      if (!oldFormat && !newFormat) {
-        throw new Error('CSV must contain the original five columns or the new six columns.');
+      const format = headers.findIndex(header => actualHeader === header.join('|').toLowerCase());
+      if (format === -1) {
+        throw new Error('CSV must contain the original 5/6 columns or the updated 7 columns.');
       }
 
       const imported = parsed.slice(1)
         .filter(cells => cells.some(v => v.trim()))
-        .map((cells) => {
-          const expectedCount = newFormat ? 6 : 5;
-
+        .map(cells => {
+          const expectedCount = headers[format].length;
           if (cells.length !== expectedCount) {
             throw new Error(`Each CSV row must have ${expectedCount} columns.`);
           }
+          const yesNo = value => ['yes', 'no'].includes(value.trim().toLowerCase());
+          if (!yesNo(cells[2])) throw new Error('Innate Magic must be Yes or No.');
 
-          const isYesNo = value => ['yes', 'no'].includes(value.trim().toLowerCase());
-
-          if (!isYesNo(cells[2]) ||
-              (newFormat && !isYesNo(cells[4])) ||
-              !isYesNo(cells[newFormat ? 5 : 4])) {
-            throw new Error('Boolean columns must use Yes or No.');
+          if (format === 2) {
+            const bodyStatus = cells[4].trim().toLowerCase();
+            const soulStatus = cells[5].trim().toLowerCase();
+            if (!BODY_STATUSES.includes(bodyStatus) || !SOUL_STATUSES.includes(soulStatus) || !yesNo(cells[6])) {
+              throw new Error('Use Alive/Dead/Absent, Present/Consumed/Absent, and Yes/No for Spark Consumed.');
+            }
+            return normalizeRow({
+              initiative: cells[0], name: cells[1],
+              innateMagic: cells[2].trim().toLowerCase() === 'yes',
+              items: cells[3], bodyStatus, soulStatus,
+              sparkConsumed: cells[6].trim().toLowerCase() === 'yes'
+            });
           }
 
+          // Legacy CSVs: Soul Present=No previously consumed both soul and innate magic.
+          if ((format === 1 && !yesNo(cells[4])) || !yesNo(cells[format === 1 ? 5 : 4])) {
+            throw new Error('Legacy Alive and Soul Present columns must be Yes or No.');
+          }
           return normalizeRow({
-            initiative: cells[0],
-            name: cells[1],
+            initiative: cells[0], name: cells[1],
             innateMagic: cells[2].trim().toLowerCase() === 'yes',
             items: cells[3],
-            alive: newFormat
-              ? cells[4].trim().toLowerCase() === 'yes'
-              : true,
-            soulPresent: cells[newFormat ? 5 : 4].trim().toLowerCase() === 'yes'
+            alive: format === 1 ? cells[4].trim().toLowerCase() === 'yes' : true,
+            soulPresent: cells[format === 1 ? 5 : 4].trim().toLowerCase() === 'yes'
           });
         });
 
@@ -466,8 +546,9 @@ function renderDM() {
       const glyphs = sorted(rows).map(r => ({
         innateMagic: r.innateMagic,
         magicalItems: itemNames(r.items).length,
-        alive: r.alive !== false,
-        soulPresent: r.soulPresent
+        bodyStatus: r.bodyStatus,
+        soulStatus: r.soulStatus,
+        sparkConsumed: r.sparkConsumed
       }));
 
       await setDoc(REF, { glyphs, publishedAt: Date.now() });
@@ -511,6 +592,12 @@ function validate(rows) {
     }
     if (itemNames(r.items).length > 39) {
       throw new Error(`${r.name}: maximum 39 items with the current Roman numeral markers.`);
+    }
+    if (!BODY_STATUSES.includes(r.bodyStatus) || !SOUL_STATUSES.includes(r.soulStatus)) {
+      throw new Error(`${r.name}: invalid body or soul status.`);
+    }
+    if (r.sparkConsumed && !r.innateMagic) {
+      throw new Error(`${r.name}: only innately magical characters can have a consumed Spark.`);
     }
   }
 }
